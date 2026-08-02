@@ -27,7 +27,7 @@ This project builds an end-to-end, production-style pipeline that:
 
 ```
 capstone/
-├── README.md                      <- you are here
+├── README.md                      
 ├── requirements.txt                <- Python dependencies
 ├── data/
 │   └── telco_customer_churn.csv    <- input dataset
