@@ -1,0 +1,143 @@
+================================================================================
+ MODEL METRICS SUMMARY — Telecom Customer Churn Prediction
+================================================================================
+Project:        Capstone Project — Telecom Customer Churn Prediction
+Report date:    August 2026
+Notebook:       notebook/Capstone_Project.ipynb
+
+--------------------------------------------------------------------------------
+1. MODEL SELECTION
+--------------------------------------------------------------------------------
+Candidates compared (5-fold Stratified Cross-Validation, scored on ROC-AUC,
+on the training split only):
+
+    Model                   Mean CV ROC-AUC     Std Dev
+    ---------------------   ----------------    -------
+    Logistic Regression          0.7220          0.0166      <-- SELECTED
+    XGBoost                      0.6909          0.0128
+    Random Forest                0.6789          0.0168
+
+Selection rule: highest mean cross-validated ROC-AUC.
+Winner: LOGISTIC REGRESSION (regularized linear model).
+
+Why a linear model won here: churn risk in this dataset is driven by a
+largely additive combination of factors (contract type, tenure, pricing,
+support add-ons) without strong non-linear interactions, so a well-
+regularized linear model matches (and here, slightly exceeds) tree
+ensembles — while remaining far easier to audit and explain to
+non-technical stakeholders.
+
+--------------------------------------------------------------------------------
+2. FINAL MODEL
+--------------------------------------------------------------------------------
+Algorithm:            Logistic Regression (scikit-learn LogisticRegression)
+Class balancing:      class_weight = "balanced"
+Selection method:     RandomizedSearchCV (n_iter=30, 5-fold Stratified CV,
+                       scoring = roc_auc, random_state = 42)
+
+Final (tuned) hyperparameters:
+    C          = 0.03        (inverse regularization strength; smaller = more regularization)
+    penalty    = l2
+    solver     = liblinear
+    max_iter   = 2000
+    class_weight = balanced
+
+Best cross-validated ROC-AUC during search: 0.7223
+Model intercept (log-odds space):           -0.1337
+
+--------------------------------------------------------------------------------
+3. FEATURES USED (25 raw inputs -> 50 model-ready columns after encoding)
+--------------------------------------------------------------------------------
+Numeric features (5) — standardized (mean 0, std 1):
+    tenure
+    MonthlyCharges
+    TotalCharges
+    AvgMonthlySpend           (engineered: TotalCharges / tenure, or MonthlyCharges if tenure = 0)
+    NumAddOnServices          (engineered: count of Yes across 6 add-on service columns)
+
+Categorical features (20) — one-hot encoded (drop-if-binary):
+    gender, SeniorCitizen, Partner, Dependents,
+    PhoneService, MultipleLines,
+    InternetService, OnlineSecurity, OnlineBackup, DeviceProtection,
+    TechSupport, StreamingTV, StreamingMovies,
+    Contract, PaperlessBilling, PaymentMethod,
+    TenureBucket              (engineered: tenure binned into 5 groups)
+    HasStreaming               (engineered: any streaming service, 0/1)
+    IsElectronicCheck          (engineered: PaymentMethod == "Electronic check", 0/1)
+    IsMonthToMonth              (engineered: Contract == "Month-to-month", 0/1)
+
+Preprocessing pipeline: sklearn ColumnTransformer
+    - numeric  -> StandardScaler
+    - categorical -> OneHotEncoder(handle_unknown="ignore", drop="if_binary")
+Fit only on the training split (no leakage into the test set).
+
+--------------------------------------------------------------------------------
+4. TOP 15 FEATURES BY |COEFFICIENT| (standardized logistic-regression scale)
+--------------------------------------------------------------------------------
+ Rank  Feature                                    Coefficient   Direction
+ ----  -----------------------------------------  -----------   -------------------
+   1   MonthlyCharges                                 +0.396    higher charges -> more churn risk
+   2   Contract_Two year                              -0.384    two-year contract -> less churn risk
+   3   tenure                                          -0.354    longer tenure -> less churn risk
+   4   Contract_Month-to-month                         +0.313    month-to-month -> more churn risk
+   5   IsMonthToMonth                                  +0.313    (duplicate signal of #4, engineered flag)
+   6   SeniorCitizen                                   +0.287    senior citizen -> more churn risk
+   7   Partner_Yes                                     -0.281    has partner -> less churn risk
+   8   InternetService_DSL                             -0.196    DSL internet -> less churn risk
+   9   PaperlessBilling_Yes                            +0.174    paperless billing -> more churn risk
+  10   TenureBucket_7-12mo                             -0.162    7-12 month tenure -> less churn risk (vs. 0-6mo baseline)
+  11   PaymentMethod_Bank transfer (automatic)         -0.158    automatic bank transfer -> less churn risk
+  12   TechSupport_Yes                                 -0.153    has tech support -> less churn risk
+  13   PaymentMethod_Electronic check                  +0.142    electronic check -> more churn risk
+  14   IsElectronicCheck                               +0.142    (duplicate signal of #13, engineered flag)
+  15   InternetService_Fiber optic                     +0.136    fiber optic internet -> more churn risk
+
+Full 50-row coefficient table: model_coefficients_full.csv (included alongside this file)
+SHAP explainability plots (global + individual-customer): see notebook, Section 7.
+
+--------------------------------------------------------------------------------
+5. PERFORMANCE METRICS (held-out test set, n = 1,400 customers, unseen in
+   training or hyperparameter search; classification threshold = 0.50)
+--------------------------------------------------------------------------------
+    Metric              Value
+    -----------------   ------
+    Accuracy             0.664
+    Precision (Churn)    0.364
+    Recall (Churn)       0.660
+    F1-score (Churn)     0.469
+    ROC-AUC              0.729
+
+Classification report:
+                  precision    recall  f1-score   support
+    No Churn         0.87       0.66     0.75       1085
+    Churn             0.36       0.66     0.47        315
+    accuracy                              0.66       1400
+    macro avg          0.62      0.66     0.61       1400
+    weighted avg       0.76      0.66     0.69       1400
+
+Train / test split: 80% / 20%, stratified on Churn, random_state = 42
+    Train set: 5,600 customers (22.5% churn)
+    Test set:  1,400 customers (22.5% churn)
+
+--------------------------------------------------------------------------------
+6. HOW TO READ THESE NUMBERS
+--------------------------------------------------------------------------------
+- ROC-AUC of 0.73 means the model ranks a randomly chosen churner above a
+  randomly chosen non-churner about 73% of the time — a solid, well
+  above-chance (0.50) signal for a single-snapshot behavioral dataset.
+- Recall of 0.66 on the churn class means the model correctly flags
+  about 2 out of every 3 customers who actually go on to churn — this
+  is the number that matters most for a proactive retention campaign,
+  since a missed churner is a lost customer.
+- Precision of 0.36 means roughly 1 in 3 customers flagged as high-risk
+  actually churns. This is an expected and acceptable trade-off given
+  class_weight="balanced" was used to prioritize recall: retention
+  outreach (an email, a call, a discount offer) is inexpensive relative
+  to losing a paying customer, so casting a somewhat wider net is the
+  right business trade-off here. The classification THRESHOLD (default
+  0.50 above) can be raised to trade some recall for higher precision if
+  the retention team's campaign capacity is limited — see the
+  precision-recall curve in the notebook (Section 6) to pick a threshold
+  that matches actual campaign budget/capacity.
+
+================================================================================
